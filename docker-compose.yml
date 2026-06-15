@@ -1,0 +1,56 @@
+version: "3.9"
+
+x-common: &common
+  env_file: .env
+  restart: unless-stopped
+  networks:
+    - band-bridge
+
+services:
+  bridge:
+    <<: *common
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: python -m uvicorn bridge.main:app --host 0.0.0.0 --port 8080
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  triage:
+    <<: *common
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: python agents/triage/main.py
+    depends_on:
+      bridge:
+        condition: service_healthy
+
+  knowledge:
+    <<: *common
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: python agents/knowledge/main.py
+    depends_on:
+      bridge:
+        condition: service_healthy
+
+  compliance:
+    <<: *common
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: python agents/compliance/main.py
+    depends_on:
+      bridge:
+        condition: service_healthy
+
+networks:
+  band-bridge:
+    driver: bridge

@@ -1,0 +1,68 @@
+{
+  "_comment": "Renggo orchestrator tool spec for the Band Bridge. Add these to your agent's tool list in the orchestrator config.",
+  "tools": [
+    {
+      "name": "escalate_to_band",
+      "description": "Escalate the current call to a Band room of specialist agents (triage, knowledge, compliance, and optional human supervisor). Use when the issue is complex, involves a refund exception, compliance concern, or hardship case. Returns an escalation_id to poll with check_resolution.",
+      "type": "http",
+      "http": {
+        "url": "${BRIDGE_URL}/escalations",
+        "method": "POST",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body_schema": {
+          "type": "object",
+          "required": ["call_id", "caller_id", "issue_description", "transcript"],
+          "properties": {
+            "call_id":            { "type": "string", "description": "Current call session ID" },
+            "caller_id":          { "type": "string", "description": "Caller phone number or customer ID" },
+            "issue_description":  { "type": "string", "description": "Concise description of the issue to escalate" },
+            "transcript":         { "type": "string", "description": "Last 5-10 turns of the call transcript" },
+            "context":            { "type": "object", "description": "Additional structured context (account info, previous tickets, etc.)" },
+            "language":           { "type": "string", "default": "en" }
+          }
+        },
+        "response_schema": {
+          "type": "object",
+          "properties": {
+            "escalation_id": { "type": "string" },
+            "status":        { "type": "string" }
+          }
+        }
+      }
+    },
+    {
+      "name": "check_resolution",
+      "description": "Poll for the resolution of an active Band escalation. Call this after escalate_to_band. If status is 'resolved', read resolution.resolution_text and speak it to the caller. If status is 'callback_scheduled', tell the caller they will receive a callback shortly and end the call gracefully. Poll every 3-5 seconds, up to 20 seconds.",
+      "type": "http",
+      "http": {
+        "url": "${BRIDGE_URL}/escalations/{escalation_id}/resolution",
+        "method": "GET",
+        "path_params": {
+          "escalation_id": "The escalation_id returned by escalate_to_band"
+        },
+        "response_schema": {
+          "type": "object",
+          "properties": {
+            "escalation_id": { "type": "string" },
+            "status": {
+              "type": "string",
+              "enum": ["queued", "triaging", "deliberating", "awaiting_human", "resolved", "callback_scheduled", "failed"]
+            },
+            "resolution": {
+              "type": "object",
+              "nullable": true,
+              "properties": {
+                "resolution_text":   { "type": "string" },
+                "approved_by":       { "type": "string" },
+                "requires_callback": { "type": "boolean" },
+                "confidence":        { "type": "number" }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}
