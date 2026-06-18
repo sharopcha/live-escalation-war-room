@@ -1,8 +1,7 @@
 """
-Compliance Agent — powered by Featherless AI open model.
+Compliance Agent — powered by OpenAI.
 
-Uses the Featherless OpenAI-compatible API endpoint to run an open-weight
-LLM for compliance checking (qualifies for the Featherless partner prize).
+Uses the OpenAI API endpoint to run an LLM for compliance checking.
 
 Band SDK: Pydantic AI-style (direct HTTP, clean structured output)
 """
@@ -21,9 +20,9 @@ from shared.models import BandMessage, ComplianceResult
 
 logger = logging.getLogger("agent.compliance")
 
-# Featherless AI — OpenAI-compatible endpoint
-FEATHERLESS_BASE = "https://api.featherless.ai/v1"
-DEFAULT_MODEL = "meta-llama/Meta-Llama-3.1-8B-Instruct"   # fast & free-tier eligible
+# OpenAI API endpoint
+OPENAI_BASE = "https://api.openai.com/v1"
+DEFAULT_MODEL = "gpt-4o-mini"
 
 SYSTEM_PROMPT = """You are a regulatory compliance agent for a call-centre AI platform.
 
@@ -54,7 +53,7 @@ async def check_compliance(
     api_key: str,
     model: str = DEFAULT_MODEL,
 ) -> ComplianceResult:
-    """Call Featherless API and parse the compliance result."""
+    """Call OpenAI API and parse the compliance result."""
     user_content = (
         f"Escalation ID: {escalation_id}\n"
         f"Issue: {issue_description}\n"
@@ -74,7 +73,7 @@ async def check_compliance(
 
     async with httpx.AsyncClient(timeout=30) as http:
         resp = await http.post(
-            f"{FEATHERLESS_BASE}/chat/completions",
+            f"{OPENAI_BASE}/chat/completions",
             json=payload,
             headers={
                 "Authorization": f"Bearer {api_key}",
@@ -106,11 +105,11 @@ async def check_compliance(
 # ---------------------------------------------------------------------------
 
 class ComplianceAgent(BaseBandAgent):
-    """Featherless-powered compliance agent."""
+    """OpenAI-powered compliance agent."""
 
-    def __init__(self, featherless_key: str, **kwargs) -> None:
+    def __init__(self, openai_key: str, **kwargs) -> None:
         super().__init__(**kwargs)
-        self._featherless_key = featherless_key
+        self._openai_key = openai_key
         self._model = os.getenv("COMPLIANCE_MODEL", DEFAULT_MODEL)
 
     async def handle_message(self, message: BandMessage, client: BandClient) -> None:
@@ -130,11 +129,11 @@ class ComplianceAgent(BaseBandAgent):
                 escalation_id=esc_id,
                 issue_description=issue,
                 proposed_resolution=proposed,
-                api_key=self._featherless_key,
+                api_key=self._openai_key,
                 model=self._model,
             )
         except Exception as exc:
-            logger.error("Featherless API error: %s", exc, exc_info=True)
+            logger.error("OpenAI API error: %s", exc, exc_info=True)
             # Fail safe: return compliant=True so we don't block the call
             result = ComplianceResult(
                 escalation_id=esc_id,
@@ -181,7 +180,7 @@ def _extract_proposed(text: str) -> str | None:
 async def main() -> None:
     agent = ComplianceAgent(
         agent_key=os.environ["COMPLIANCE_AGENT_KEY"],
-        featherless_key=os.environ["FEATHERLESS_API_KEY"],
+        openai_key=os.environ["OPENAI_API_KEY"],
         base_url=os.getenv("BAND_BASE_URL", "https://app.band.ai"),
         agent_name="compliance",
     )

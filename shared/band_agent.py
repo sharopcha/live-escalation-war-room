@@ -86,33 +86,48 @@ class BaseBandAgent(ABC):
 
             while self._running:
                 try:
-                    raw = await client.get_next_message()
-                    if raw is None:
-                        await asyncio.sleep(self._poll_interval)
-                        continue
+                    # Band's work-queue is scoped per chat room — discover the
+                    # rooms this agent currently participates in, then poll
+                    # each room's queue in turn.
+                    chats = await client.list_chats()
+                    got_message = False
 
-                    message = self._parse_message(raw)
-                    logger.info(
-                        "[%s] Received message %s from %s",
-                        self._agent_name,
-                        message.message_id,
-                        message.sender_id,
-                    )
+                    for chat in chats:
+                        chat_id = chat.get("id")
+                        if not chat_id:
+                            continue
 
-                    await client.mark_processing(message.message_id)
+                        raw = await client.get_next_message(chat_id)
+                        if raw is None:
+                            continue
+                        got_message = True
 
-                    try:
-                        await self.handle_message(message, client)
-                        await client.mark_processed(message.message_id)
-                    except Exception as exc:
-                        logger.error(
-                            "[%s] Error handling message %s: %s",
+                        message = self._parse_message(raw, chat_id)
+                        logger.info(
+                            "[%s] Received message %s from %s in chat %s",
                             self._agent_name,
                             message.message_id,
-                            exc,
-                            exc_info=True,
+                            message.sender_id,
+                            chat_id,
                         )
-                        await client.mark_failed(message.message_id, str(exc))
+
+                        await client.mark_processing(chat_id, message.message_id)
+
+                        try:
+                            await self.handle_message(message, client)
+                            await client.mark_processed(chat_id, message.message_id)
+                        except Exception as exc:
+                            logger.error(
+                                "[%s] Error handling message %s: %s",
+                                self._agent_name,
+                                message.message_id,
+                                exc,
+                                exc_info=True,
+                            )
+                            await client.mark_failed(chat_id, message.message_id, str(exc))
+
+                    if not got_message:
+                        await asyncio.sleep(self._poll_interval)
 
                 except asyncio.CancelledError:
                     break
@@ -132,14 +147,18 @@ class BaseBandAgent(ABC):
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _parse_message(raw: dict[str, Any]) -> BandMessage:
+    def _parse_message(raw: dict[str, Any], default_chat_id: str = "") -> BandMessage:
+        # Band's message body comes back under "content" (matches the key
+        # send_message() POSTs as) — not "text". Keep "text" as a fallback
+        # in case an endpoint ever differs.
+        mentions_raw = raw.get("mentions", raw.get("mention_ids", []))
         return BandMessage(
             message_id=raw.get("id", ""),
-            chat_id=raw.get("chat_id", ""),
+            chat_id=raw.get("chat_id") or default_chat_id,
             sender_id=raw.get("sender_id", ""),
             sender_type=raw.get("sender_type", "agent"),
-            text=raw.get("text", ""),
-            mentions=raw.get("mention_ids", []),
+            text=raw.get("content") or raw.get("text", ""),
+            mentions=[m.get("id") if isinstance(m, dict) else m for m in mentions_raw],
             created_at=raw.get("created_at", ""),
             raw=raw,
         )
@@ -153,7 +172,7 @@ class BaseBandAgent(ABC):
         match = re.search(r"\{.*\}", text, re.DOTALL)
         if match:
             try:
-                return json.loads(match.group())
+                return json.loads(match.group(), strict=False)
             except json.JSONDecodeError:
                 return None
         return None

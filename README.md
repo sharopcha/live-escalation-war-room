@@ -44,7 +44,7 @@ Caller ──► Renggo Gemini Live Agent (closed-source, hosted)
 | **Bridge** | FastAPI + httpx | — | Orchestrates room, routes messages, stores resolution |
 | **Triage** | LangGraph | GPT-4o-mini | Classifies case, emits `requires_human_approval` flag |
 | **Knowledge** | Standalone RAG | GPT-4o-mini (optional) | Searches KB, returns answer + confidence |
-| **Compliance** | Featherless API | Llama-3.1-8B | Checks resolution against policy/regulations |
+| **Compliance** | OpenAI API | gpt-4o-mini | Checks resolution against policy/regulations |
 | **Supervisor** | Human | — | Reviews in Band web UI, posts `@Bridge {resolution JSON}` |
 
 ### Routing
@@ -199,7 +199,7 @@ renggo-band-bridge/
 ├── agents/
 │   ├── triage/      # LangGraph triage agent
 │   ├── knowledge/   # TF-IDF RAG knowledge agent
-│   └── compliance/  # Featherless compliance agent
+│   └── compliance/  # OpenAI compliance agent
 ├── shared/
 │   ├── band_client.py  # Band REST API client
 │   ├── band_agent.py   # Base polling loop

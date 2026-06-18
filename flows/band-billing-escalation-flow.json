@@ -1,0 +1,711 @@
+{
+  "formatVersion": "1.0",
+  "exportedAt": "2026-06-18T00:00:00.000Z",
+  "agent": {
+    "name": "Band Billing Escalation",
+    "description": "Band Billing Escalation demo"
+  },
+  "flow": {
+    "nodes": [
+      {
+        "id": "begin-1",
+        "type": "begin",
+        "position": {
+          "x": 400,
+          "y": 0
+        },
+        "data": {
+          "label": "Start",
+          "nodeType": "begin",
+          "transitions": [
+            {
+              "id": "t-begin-greeting",
+              "label": "",
+              "conditionType": "default",
+              "targetNodeId": "greeting"
+            }
+          ]
+        },
+        "targetPosition": "top",
+        "sourcePosition": "bottom"
+      },
+      {
+        "id": "global-1",
+        "type": "globalNode",
+        "position": {
+          "x": -300,
+          "y": 0
+        },
+        "data": {
+          "label": "Global Rules",
+          "nodeType": "globalNode",
+          "instructions": "This is a demo voice agent for the renggo-band-bridge billing-escalation hackathon project (Band of Agents Hackathon). The caller is on a live phone call \u2014 keep turns short, natural, and warm. Never reveal you are an AI unless directly asked. This demo build only handles billing and duplicate-charge disputes; politely redirect anything else.\n\nThis flow calls two external tools automatically at fixed steps in the script (an escalation API, then a resolution-check API) \u2014 these run on their own, you do not decide when to call them. Just follow the script and speak the results naturally once they come back.\n\nIf a step's API call fails or returns no usable data, treat it the same as a 'we'll call you back' outcome: apologize briefly and say the case has been forwarded for review.",
+          "priority": 1,
+          "transitions": []
+        },
+        "targetPosition": "top",
+        "sourcePosition": "bottom"
+      },
+      {
+        "id": "greeting",
+        "type": "conversation",
+        "position": {
+          "x": 400,
+          "y": 140
+        },
+        "data": {
+          "label": "Greeting",
+          "nodeType": "conversation",
+          "prompt": "Greet the caller warmly and ask how you can help them today.",
+          "transitions": [
+            {
+              "id": "t-greet-billing",
+              "label": "Billing dispute",
+              "conditionType": "prompt",
+              "condition": "The caller mentions a billing problem, a duplicate or double charge, an incorrect charge, or wants a refund",
+              "targetNodeId": "collect-caller-id"
+            },
+            {
+              "id": "t-greet-other",
+              "label": "Other / unclear",
+              "conditionType": "default",
+              "targetNodeId": "out-of-scope"
+            }
+          ]
+        },
+        "targetPosition": "top",
+        "sourcePosition": "bottom"
+      },
+      {
+        "id": "out-of-scope",
+        "type": "conversation",
+        "position": {
+          "x": 820,
+          "y": 140
+        },
+        "data": {
+          "label": "Out of Scope",
+          "nodeType": "conversation",
+          "prompt": "Politely explain that this demo line currently only handles billing and duplicate-charge issues, and ask if that's what they're calling about.",
+          "transitions": [
+            {
+              "id": "t-oos-billing",
+              "label": "Confirms billing issue",
+              "conditionType": "prompt",
+              "condition": "The caller confirms they do have a billing or duplicate-charge issue",
+              "targetNodeId": "collect-caller-id"
+            },
+            {
+              "id": "t-oos-bye",
+              "label": "Not billing-related",
+              "conditionType": "default",
+              "targetNodeId": "goodbye"
+            }
+          ]
+        },
+        "targetPosition": "top",
+        "sourcePosition": "bottom"
+      },
+      {
+        "id": "collect-caller-id",
+        "type": "extractVariable",
+        "position": {
+          "x": 400,
+          "y": 300
+        },
+        "data": {
+          "label": "Collect Caller ID",
+          "nodeType": "extractVariable",
+          "variableName": "caller_id",
+          "extractionPrompt": "Ask the caller for the phone number or account number on file so you can look up their account.",
+          "variableType": "phone",
+          "required": true,
+          "validationHint": "Phone number or account identifier",
+          "transitions": [
+            {
+              "id": "t-cid-next",
+              "label": "",
+              "conditionType": "default",
+              "targetNodeId": "collect-issue-description"
+            }
+          ]
+        },
+        "targetPosition": "top",
+        "sourcePosition": "bottom"
+      },
+      {
+        "id": "collect-issue-description",
+        "type": "extractVariable",
+        "position": {
+          "x": 400,
+          "y": 460
+        },
+        "data": {
+          "label": "Collect Issue Description",
+          "nodeType": "extractVariable",
+          "variableName": "issue_description",
+          "extractionPrompt": "Ask the caller to briefly describe the billing issue in their own words \u2014 what they were charged, how much, and when.",
+          "variableType": "string",
+          "required": true,
+          "validationHint": "A short free-text description",
+          "transitions": [
+            {
+              "id": "t-idesc-next",
+              "label": "",
+              "conditionType": "default",
+              "targetNodeId": "collect-charge-amount"
+            }
+          ]
+        },
+        "targetPosition": "top",
+        "sourcePosition": "bottom"
+      },
+      {
+        "id": "collect-charge-amount",
+        "type": "extractVariable",
+        "position": {
+          "x": 400,
+          "y": 620
+        },
+        "data": {
+          "label": "Collect Charge Amount",
+          "nodeType": "extractVariable",
+          "variableName": "duplicate_charge_amount",
+          "extractionPrompt": "Ask the caller how much the duplicate or incorrect charge was, in euros.",
+          "variableType": "number",
+          "required": true,
+          "validationHint": "A numeric amount, e.g. 49.99",
+          "transitions": [
+            {
+              "id": "t-ccharge-next",
+              "label": "",
+              "conditionType": "default",
+              "targetNodeId": "confirm-details"
+            }
+          ]
+        },
+        "targetPosition": "top",
+        "sourcePosition": "bottom"
+      },
+      {
+        "id": "confirm-details",
+        "type": "conversation",
+        "position": {
+          "x": 400,
+          "y": 780
+        },
+        "data": {
+          "label": "Confirm Details",
+          "nodeType": "conversation",
+          "prompt": "Read back a short summary to confirm: 'So to confirm, {{issue_description}}, for a charge of around {{duplicate_charge_amount}} euros \u2014 is that right?' Wait for the caller to confirm or correct it before moving on.",
+          "transitions": [
+            {
+              "id": "t-cd-confirmed",
+              "label": "Confirmed",
+              "conditionType": "prompt",
+              "condition": "The caller confirms the summary is correct",
+              "targetNodeId": "escalate-call"
+            },
+            {
+              "id": "t-cd-correction",
+              "label": "Wants to correct details",
+              "conditionType": "prompt",
+              "condition": "The caller says the summary is wrong or wants to change a detail",
+              "targetNodeId": "collect-issue-description"
+            }
+          ]
+        },
+        "targetPosition": "top",
+        "sourcePosition": "bottom"
+      },
+      {
+        "id": "escalate-call",
+        "type": "function",
+        "position": {
+          "x": 400,
+          "y": 940
+        },
+        "data": {
+          "label": "Escalate to Band",
+          "nodeType": "function",
+          "url": "http://localhost:8080/escalations",
+          "method": "POST",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": "{\"call_id\": \"demo-{{caller_id}}\", \"caller_id\": \"{{caller_id}}\", \"issue_description\": \"{{issue_description}}\", \"transcript\": \"Agent: How can I help you today?\\nCaller: {{issue_description}}\", \"context\": {\"account_id\": \"{{caller_id}}\", \"duplicate_charge_amount\": {{duplicate_charge_amount}}, \"standard_refund_eligible\": true}, \"language\": \"en\"}",
+          "responseMapping": [
+            {
+              "variable": "escalation_id",
+              "path": "$.escalation_id"
+            },
+            {
+              "variable": "escalation_status",
+              "path": "$.status"
+            }
+          ],
+          "errorHandling": "continue",
+          "transitions": [
+            {
+              "id": "t-escalate-next",
+              "label": "",
+              "conditionType": "default",
+              "targetNodeId": "speak-checking"
+            }
+          ]
+        },
+        "targetPosition": "top",
+        "sourcePosition": "bottom"
+      },
+      {
+        "id": "speak-checking",
+        "type": "conversation",
+        "position": {
+          "x": 400,
+          "y": 1100
+        },
+        "data": {
+          "label": "Speak Checking",
+          "nodeType": "conversation",
+          "prompt": "Tell the caller you're checking on this now and it will just take a moment.",
+          "transitions": [
+            {
+              "id": "t-speak-next",
+              "label": "",
+              "conditionType": "default",
+              "targetNodeId": "check-resolution-1"
+            }
+          ]
+        },
+        "targetPosition": "top",
+        "sourcePosition": "bottom"
+      },
+      {
+        "id": "check-resolution-1",
+        "type": "function",
+        "position": {
+          "x": 400,
+          "y": 1260
+        },
+        "data": {
+          "label": "Check Resolution (1)",
+          "nodeType": "function",
+          "url": "http://localhost:8080/escalations/{{escalation_id}}/resolution",
+          "method": "GET",
+          "headers": {},
+          "body": "",
+          "responseMapping": [
+            {
+              "variable": "escalation_status",
+              "path": "$.status"
+            },
+            {
+              "variable": "resolution_text",
+              "path": "$.resolution.resolution_text"
+            }
+          ],
+          "errorHandling": "continue",
+          "transitions": [
+            {
+              "id": "t-cr1-next",
+              "label": "",
+              "conditionType": "default",
+              "targetNodeId": "evaluate-status-1"
+            }
+          ]
+        },
+        "targetPosition": "top",
+        "sourcePosition": "bottom"
+      },
+      {
+        "id": "evaluate-status-1",
+        "type": "logicSplit",
+        "position": {
+          "x": 400,
+          "y": 1420
+        },
+        "data": {
+          "label": "Evaluate Status (1)",
+          "nodeType": "logicSplit",
+          "conditions": [
+            {
+              "id": "cond-resolved-1",
+              "label": "Resolved",
+              "conditionType": "equation",
+              "condition": "{{escalation_status}} == \"resolved\""
+            },
+            {
+              "id": "cond-callback-1",
+              "label": "Callback scheduled",
+              "conditionType": "equation",
+              "condition": "{{escalation_status}} == \"callback_scheduled\""
+            },
+            {
+              "id": "cond-default-1",
+              "label": "Still working",
+              "conditionType": "default",
+              "condition": ""
+            }
+          ],
+          "transitions": []
+        },
+        "targetPosition": "top",
+        "sourcePosition": "bottom"
+      },
+      {
+        "id": "wait-poll-1",
+        "type": "conversation",
+        "position": {
+          "x": 820,
+          "y": 1420
+        },
+        "data": {
+          "label": "Wait & Reassure",
+          "nodeType": "conversation",
+          "prompt": "Briefly reassure the caller you're still checking \u2014 something like 'Just a few more seconds.' Pause naturally for about 8 seconds before continuing.",
+          "transitions": [
+            {
+              "id": "t-waitpoll1-next",
+              "label": "",
+              "conditionType": "default",
+              "targetNodeId": "check-resolution-2"
+            }
+          ]
+        },
+        "targetPosition": "top",
+        "sourcePosition": "bottom"
+      },
+      {
+        "id": "check-resolution-2",
+        "type": "function",
+        "position": {
+          "x": 820,
+          "y": 1580
+        },
+        "data": {
+          "label": "Check Resolution (2)",
+          "nodeType": "function",
+          "url": "http://localhost:8080/escalations/{{escalation_id}}/resolution",
+          "method": "GET",
+          "headers": {},
+          "body": "",
+          "responseMapping": [
+            {
+              "variable": "escalation_status",
+              "path": "$.status"
+            },
+            {
+              "variable": "resolution_text",
+              "path": "$.resolution.resolution_text"
+            }
+          ],
+          "errorHandling": "continue",
+          "transitions": [
+            {
+              "id": "t-cr2-next",
+              "label": "",
+              "conditionType": "default",
+              "targetNodeId": "evaluate-status-2"
+            }
+          ]
+        },
+        "targetPosition": "top",
+        "sourcePosition": "bottom"
+      },
+      {
+        "id": "evaluate-status-2",
+        "type": "logicSplit",
+        "position": {
+          "x": 820,
+          "y": 1740
+        },
+        "data": {
+          "label": "Evaluate Status (2)",
+          "nodeType": "logicSplit",
+          "conditions": [
+            {
+              "id": "cond-resolved-2",
+              "label": "Resolved",
+              "conditionType": "equation",
+              "condition": "{{escalation_status}} == \"resolved\""
+            },
+            {
+              "id": "cond-default-2",
+              "label": "Not resolved in time",
+              "conditionType": "default",
+              "condition": ""
+            }
+          ],
+          "transitions": []
+        },
+        "targetPosition": "top",
+        "sourcePosition": "bottom"
+      },
+      {
+        "id": "deliver-resolution",
+        "type": "conversation",
+        "position": {
+          "x": 400,
+          "y": 1900
+        },
+        "data": {
+          "label": "Deliver Resolution",
+          "nodeType": "conversation",
+          "prompt": "Speak {{resolution_text}} to the caller warmly and naturally, as the resolution to their issue. Thank them for their patience. Ask if there's anything else you can help with.",
+          "transitions": [
+            {
+              "id": "t-dr-more",
+              "label": "Another issue",
+              "conditionType": "prompt",
+              "condition": "The caller has another issue they'd like help with",
+              "targetNodeId": "greeting"
+            },
+            {
+              "id": "t-dr-bye",
+              "label": "",
+              "conditionType": "default",
+              "targetNodeId": "goodbye"
+            }
+          ]
+        },
+        "targetPosition": "top",
+        "sourcePosition": "bottom"
+      },
+      {
+        "id": "callback-message",
+        "type": "conversation",
+        "position": {
+          "x": 1100,
+          "y": 1900
+        },
+        "data": {
+          "label": "Callback Message",
+          "nodeType": "conversation",
+          "prompt": "Tell the caller you weren't able to fully resolve this while they're on the line, but their case has been forwarded for review and they'll receive a callback shortly. Be warm and reassuring. Do not mention internal systems or tools.",
+          "transitions": [
+            {
+              "id": "t-cb-next",
+              "label": "",
+              "conditionType": "default",
+              "targetNodeId": "goodbye"
+            }
+          ]
+        },
+        "targetPosition": "top",
+        "sourcePosition": "bottom"
+      },
+      {
+        "id": "goodbye",
+        "type": "ending",
+        "position": {
+          "x": 400,
+          "y": 2060
+        },
+        "data": {
+          "label": "Goodbye",
+          "nodeType": "ending",
+          "endMessage": "Thank the caller warmly for calling and wish them a good day.",
+          "transitions": []
+        },
+        "targetPosition": "top",
+        "sourcePosition": "bottom"
+      }
+    ],
+    "edges": [
+      {
+        "id": "e-begin-greeting",
+        "source": "begin-1",
+        "target": "greeting",
+        "data": {
+          "label": ""
+        }
+      },
+      {
+        "id": "e-greet-billing",
+        "source": "greeting",
+        "target": "collect-caller-id",
+        "data": {
+          "label": "Billing dispute"
+        }
+      },
+      {
+        "id": "e-greet-other",
+        "source": "greeting",
+        "target": "out-of-scope",
+        "data": {
+          "label": "Other / unclear"
+        }
+      },
+      {
+        "id": "e-oos-billing",
+        "source": "out-of-scope",
+        "target": "collect-caller-id",
+        "data": {
+          "label": "Confirms billing issue"
+        }
+      },
+      {
+        "id": "e-oos-bye",
+        "source": "out-of-scope",
+        "target": "goodbye",
+        "data": {
+          "label": "Not billing-related"
+        }
+      },
+      {
+        "id": "e-cid-next",
+        "source": "collect-caller-id",
+        "target": "collect-issue-description",
+        "data": {
+          "label": ""
+        }
+      },
+      {
+        "id": "e-idesc-next",
+        "source": "collect-issue-description",
+        "target": "collect-charge-amount",
+        "data": {
+          "label": ""
+        }
+      },
+      {
+        "id": "e-ccharge-next",
+        "source": "collect-charge-amount",
+        "target": "confirm-details",
+        "data": {
+          "label": ""
+        }
+      },
+      {
+        "id": "e-cd-confirmed",
+        "source": "confirm-details",
+        "target": "escalate-call",
+        "data": {
+          "label": "Confirmed"
+        }
+      },
+      {
+        "id": "e-cd-correction",
+        "source": "confirm-details",
+        "target": "collect-issue-description",
+        "data": {
+          "label": "Wants to correct details"
+        }
+      },
+      {
+        "id": "e-escalate-next",
+        "source": "escalate-call",
+        "target": "speak-checking",
+        "data": {
+          "label": ""
+        }
+      },
+      {
+        "id": "e-speak-next",
+        "source": "speak-checking",
+        "target": "check-resolution-1",
+        "data": {
+          "label": ""
+        }
+      },
+      {
+        "id": "e-cr1-next",
+        "source": "check-resolution-1",
+        "target": "evaluate-status-1",
+        "data": {
+          "label": ""
+        }
+      },
+      {
+        "id": "e-split1-resolved",
+        "source": "evaluate-status-1",
+        "target": "deliver-resolution",
+        "sourceHandle": "condition-cond-resolved-1",
+        "data": {
+          "label": "Resolved"
+        }
+      },
+      {
+        "id": "e-split1-callback",
+        "source": "evaluate-status-1",
+        "target": "callback-message",
+        "sourceHandle": "condition-cond-callback-1",
+        "data": {
+          "label": "Callback scheduled"
+        }
+      },
+      {
+        "id": "e-split1-default",
+        "source": "evaluate-status-1",
+        "target": "wait-poll-1",
+        "sourceHandle": "condition-cond-default-1",
+        "data": {
+          "label": "Still working"
+        }
+      },
+      {
+        "id": "e-waitpoll1-next",
+        "source": "wait-poll-1",
+        "target": "check-resolution-2",
+        "data": {
+          "label": ""
+        }
+      },
+      {
+        "id": "e-cr2-next",
+        "source": "check-resolution-2",
+        "target": "evaluate-status-2",
+        "data": {
+          "label": ""
+        }
+      },
+      {
+        "id": "e-split2-resolved",
+        "source": "evaluate-status-2",
+        "target": "deliver-resolution",
+        "sourceHandle": "condition-cond-resolved-2",
+        "data": {
+          "label": "Resolved"
+        }
+      },
+      {
+        "id": "e-split2-default",
+        "source": "evaluate-status-2",
+        "target": "callback-message",
+        "sourceHandle": "condition-cond-default-2",
+        "data": {
+          "label": "Not resolved in time"
+        }
+      },
+      {
+        "id": "e-dr-more",
+        "source": "deliver-resolution",
+        "target": "greeting",
+        "data": {
+          "label": "Another issue"
+        }
+      },
+      {
+        "id": "e-dr-bye",
+        "source": "deliver-resolution",
+        "target": "goodbye",
+        "data": {
+          "label": ""
+        }
+      },
+      {
+        "id": "e-cb-next",
+        "source": "callback-message",
+        "target": "goodbye",
+        "data": {
+          "label": ""
+        }
+      }
+    ],
+    "viewport": {
+      "x": 0,
+      "y": 0,
+      "zoom": 0.5
+    }
+  }
+}

@@ -14,7 +14,7 @@ langchain-openai>=0.1.0
 # Knowledge agent
 # (uses stdlib only for TF-IDF + optional langchain-openai for synthesis)
 
-# Compliance agent (Featherless via httpx — already listed above)
+# Compliance agent (OpenAI via httpx — already listed above)
 
 # Dev / testing
 pytest>=8.0.0

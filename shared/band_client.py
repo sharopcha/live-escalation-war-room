@@ -42,7 +42,7 @@ class BandClient:
         self._client = httpx.AsyncClient(
             base_url=self._base_url,
             headers={
-                "Authorization": f"Bearer {self._api_key}",
+                "X-API-Key": self._api_key,
                 "Content-Type": "application/json",
                 "Accept": "application/json",
             },
@@ -101,15 +101,20 @@ class BandClient:
 
     async def create_chat(
         self,
-        name: str,
+        name: str = "",
         description: str = "",
         participant_ids: list[str] | None = None,
     ) -> dict[str, Any]:
-        """Create a new Band chat room."""
-        payload: dict[str, Any] = {"name": name, "description": description}
-        if participant_ids:
-            payload["participant_ids"] = participant_ids
-        return await self._request("POST", "/api/v1/agent/chats", json=payload)
+        """
+        Create a new Band chat room.
+
+        The Agent API's create-chat endpoint just takes `{"chat": {}}` — there's
+        no documented `name`/`description` field (the room's title is derived
+        from its first message). `name`/`description`/`participant_ids` are
+        accepted here for caller convenience but are not sent; add participants
+        afterwards via `add_participant()` and post context via `send_message()`.
+        """
+        return await self._request("POST", "/api/v1/agent/chats", json={"chat": {}})
 
     async def get_chat(self, chat_id: str) -> dict[str, Any]:
         return await self._request("GET", f"/api/v1/agent/chats/{chat_id}")
@@ -126,7 +131,7 @@ class BandClient:
         return await self._request(
             "POST",
             f"/api/v1/agent/chats/{chat_id}/participants",
-            json={"participant_id": participant_id},
+            json={"participant": {"participant_id": participant_id}},
         )
 
     async def remove_participant(self, chat_id: str, participant_id: str) -> None:
@@ -151,11 +156,22 @@ class BandClient:
     ) -> dict[str, Any]:
         """
         Send a message to a chat room.
-        `mention_ids` are agent/user IDs to @mention (required for them to see it).
+        `mention_ids` are agent/user IDs to @mention. Band requires at least
+        one mention on a text message for it to be routed to recipients —
+        if none are given, the message likely won't reach anyone.
         """
-        payload: dict[str, Any] = {"text": text}
-        if mention_ids:
-            payload["mention_ids"] = mention_ids
+        if not mention_ids:
+            logger.warning(
+                "send_message to chat %s with no mentions — Band requires at "
+                "least one @mention to route the message",
+                chat_id,
+            )
+        payload: dict[str, Any] = {
+            "message": {
+                "content": text,
+                "mentions": [{"id": mid} for mid in (mention_ids or [])],
+            }
+        }
         return await self._request(
             "POST", f"/api/v1/agent/chats/{chat_id}/messages", json=payload
         )
@@ -166,7 +182,7 @@ class BandClient:
         """Fetch recent message history for context rehydration."""
         data = await self._request(
             "GET",
-            f"/api/v1/agent/chats/{chat_id}/messages",
+            f"/api/v1/agent/chats/{chat_id}/context",
             params={"limit": limit},
         )
         return data.get("data", [])
@@ -175,33 +191,37 @@ class BandClient:
     # Work-queue (agent message polling)
     # ------------------------------------------------------------------
 
-    async def get_next_message(self) -> dict[str, Any] | None:
+    async def get_next_message(self, chat_id: str) -> dict[str, Any] | None:
         """
-        Poll for the next unprocessed message directed at this agent.
-        Returns None if the queue is empty.
+        Poll for the next unprocessed message directed at this agent within
+        a specific chat room. Band's work-queue is scoped per chat room —
+        there is no global "next message" endpoint. Returns None if that
+        room's queue is empty.
         """
-        data = await self._request("GET", "/api/v1/agent/messages/next")
+        data = await self._request(
+            "GET", f"/api/v1/agent/chats/{chat_id}/messages/next"
+        )
         return data.get("data") or None
 
-    async def mark_processing(self, message_id: str) -> None:
+    async def mark_processing(self, chat_id: str, message_id: str) -> None:
         await self._request(
-            "PATCH",
-            f"/api/v1/agent/messages/{message_id}/status",
-            json={"status": "processing"},
+            "POST",
+            f"/api/v1/agent/chats/{chat_id}/messages/{message_id}/processing",
         )
 
-    async def mark_processed(self, message_id: str) -> None:
+    async def mark_processed(self, chat_id: str, message_id: str) -> None:
         await self._request(
-            "PATCH",
-            f"/api/v1/agent/messages/{message_id}/status",
-            json={"status": "processed"},
+            "POST",
+            f"/api/v1/agent/chats/{chat_id}/messages/{message_id}/processed",
         )
 
-    async def mark_failed(self, message_id: str, reason: str = "") -> None:
+    async def mark_failed(
+        self, chat_id: str, message_id: str, reason: str = ""
+    ) -> None:
         await self._request(
-            "PATCH",
-            f"/api/v1/agent/messages/{message_id}/status",
-            json={"status": "failed", "reason": reason},
+            "POST",
+            f"/api/v1/agent/chats/{chat_id}/messages/{message_id}/failed",
+            json={"error": reason.strip() or "Unspecified error"},
         )
 
     # ------------------------------------------------------------------
@@ -211,15 +231,23 @@ class BandClient:
     async def post_event(
         self,
         chat_id: str,
-        event_type: str,
-        payload: dict[str, Any],
+        message_type: str,
+        content: str,
+        metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """
-        Post a structured event to a chat room.
-        event_type: "tool_call" | "tool_result" | "thought" | "error" | "task"
+        Post a structured event to a chat room. Events don't require mentions —
+        they report what happened rather than directing messages at participants.
+        message_type: "tool_call" | "tool_result" | "thought" | "error" | "task"
         """
         return await self._request(
             "POST",
             f"/api/v1/agent/chats/{chat_id}/events",
-            json={"type": event_type, "payload": payload},
+            json={
+                "event": {
+                    "content": content,
+                    "message_type": message_type,
+                    "metadata": metadata or {},
+                }
+            },
         )

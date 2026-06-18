@@ -134,16 +134,18 @@ class BridgeAgent:
             )
 
     async def post_parallel_task(
-        self, chat_id: str, escalation_id: str
+        self, chat_id: str, ticket: EscalationTicket, triage: TriageResult
     ) -> None:
         """After triage → in-call path: kick off knowledge + compliance in parallel."""
         cfg = self._settings
         async with BandClient(cfg.bridge_agent_key, cfg.band_base_url) as client:
             await client.send_message(
                 chat_id,
-                f"✅ Triage complete (auto-approved path). "
-                f"@Knowledge @Compliance please deliberate on {escalation_id} in parallel "
-                f"and each post your result JSON.",
+                f"✅ Triage complete (auto-approved path) for {ticket.escalation_id}.\n\n"
+                f"**Issue:** {ticket.issue_description}\n"
+                f'suggested_resolution: "{triage.suggested_resolution or ""}"\n\n'
+                f"@Knowledge @Compliance please deliberate in parallel and each post "
+                f"your result JSON.",
                 mention_ids=[cfg.knowledge_agent_id, cfg.compliance_agent_id],
             )
 
@@ -176,24 +178,42 @@ class BridgeAgent:
     # ------------------------------------------------------------------
 
     async def _poll_loop(self) -> None:
+        """
+        Band's agent work-queue is scoped per chat room — there is no global
+        "next message" endpoint. So instead of polling one queue, we poll each
+        room belonging to a still-active escalation.
+        """
         cfg = self._settings
         async with BandClient(cfg.bridge_agent_key, cfg.band_base_url) as client:
-            logger.info("Bridge polling Band work-queue…")
+            logger.info("Bridge polling Band work-queues…")
             while self._running:
                 try:
-                    raw = await client.get_next_message()
-                    if raw is None:
-                        await asyncio.sleep(1.5)
-                        continue
+                    tickets = await store.all()
+                    room_ids = {
+                        t.band_room_id
+                        for t in tickets
+                        if t.band_room_id
+                        and t.status not in (EscalationStatus.RESOLVED, EscalationStatus.FAILED)
+                    }
 
-                    msg = _parse_message(raw)
-                    await client.mark_processing(msg.message_id)
-                    try:
-                        await self._handle_band_message(msg, client)
-                        await client.mark_processed(msg.message_id)
-                    except Exception as exc:
-                        logger.error("Error handling Band message: %s", exc, exc_info=True)
-                        await client.mark_failed(msg.message_id, str(exc))
+                    got_message = False
+                    for chat_id in room_ids:
+                        raw = await client.get_next_message(chat_id)
+                        if raw is None:
+                            continue
+                        got_message = True
+
+                        msg = _parse_message(raw, chat_id)
+                        await client.mark_processing(chat_id, msg.message_id)
+                        try:
+                            await self._handle_band_message(msg, client)
+                            await client.mark_processed(chat_id, msg.message_id)
+                        except Exception as exc:
+                            logger.error("Error handling Band message: %s", exc, exc_info=True)
+                            await client.mark_failed(chat_id, msg.message_id, str(exc))
+
+                    if not got_message:
+                        await asyncio.sleep(1.5)
 
                 except asyncio.CancelledError:
                     break
@@ -267,7 +287,7 @@ class BridgeAgent:
             ticket.status = EscalationStatus.DELIBERATING
             await store.update(ticket)
             if ticket.band_room_id:
-                await self.post_parallel_task(ticket.band_room_id, ticket.escalation_id)
+                await self.post_parallel_task(ticket.band_room_id, ticket, result)
             logger.info("Escalation %s → in-call path (auto)", ticket.escalation_id)
 
     async def _on_knowledge(self, ticket: EscalationTicket, data: dict) -> None:
@@ -419,14 +439,35 @@ async def get_resolution(escalation_id: str) -> EscalationResolutionResponse:
     Called by Renggo's `check_resolution` tool.
     Returns current status and resolution (if available).
     """
+    import asyncio
+    
     ticket = await store.get(escalation_id)
     if ticket is None:
         raise HTTPException(status_code=404, detail="Escalation not found")
 
+    # Long-polling: wait up to 25 seconds for deliberation to finish
+    for _ in range(25):
+        if ticket.status in (
+            EscalationStatus.RESOLVED,
+            EscalationStatus.AWAITING_HUMAN,
+            EscalationStatus.CALLBACK_SCHEDULED,
+            EscalationStatus.FAILED,
+        ):
+            break
+        await asyncio.sleep(1.0)
+        ticket = await store.get(escalation_id)
+
+    res = ticket.resolution
+    if not res:
+        # Provide a default empty resolution to prevent JSONPath errors in the call center flow
+        # when it tries to extract $.resolution.resolution_text during polling.
+        from shared.models import Resolution
+        res = Resolution(escalation_id=escalation_id, resolution_text="")
+
     return EscalationResolutionResponse(
         escalation_id=escalation_id,
         status=ticket.status,
-        resolution=ticket.resolution,
+        resolution=res,
     )
 
 
@@ -434,14 +475,18 @@ async def get_resolution(escalation_id: str) -> EscalationResolutionResponse:
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _parse_message(raw: dict[str, Any]) -> BandMessage:
+def _parse_message(raw: dict[str, Any], default_chat_id: str = "") -> BandMessage:
+    # Band's message body comes back under "content" (matches the key
+    # send_message() POSTs as) — not "text". Keep "text" as a fallback
+    # in case an endpoint ever differs.
+    mentions_raw = raw.get("mentions", raw.get("mention_ids", []))
     return BandMessage(
         message_id=raw.get("id", ""),
-        chat_id=raw.get("chat_id", ""),
+        chat_id=raw.get("chat_id") or default_chat_id,
         sender_id=raw.get("sender_id", ""),
         sender_type=raw.get("sender_type", "agent"),
-        text=raw.get("text", ""),
-        mentions=raw.get("mention_ids", []),
+        text=raw.get("content") or raw.get("text", ""),
+        mentions=[m.get("id") if isinstance(m, dict) else m for m in mentions_raw],
         created_at=raw.get("created_at", ""),
         raw=raw,
     )
@@ -452,7 +497,7 @@ def _extract_json(text: str) -> dict[str, Any] | None:
     match = re.search(r"\{.*\}", text, re.DOTALL)
     if match:
         try:
-            return json.loads(match.group())
+            return json.loads(match.group(), strict=False)
         except json.JSONDecodeError:
             return None
     return None
