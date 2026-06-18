@@ -51,7 +51,8 @@ As shown in the diagram above, our architecture supports a callback path. If an 
 
 ### Fast path — telecom billing dispute (~15s in-call)
 
-![Call Center Billing Escalation Flow](assets/billing_flow_diagram.png)
+
+![Renggo App - Billing Escalation Flow](assets/renggo_app_flow.png)
 
 ```
 Caller: "I was charged twice for my internet plan in March."
