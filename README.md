@@ -162,25 +162,28 @@ curl http://localhost:8080/escalations/esc_abc123/resolution
 
 ## 🔌 Renggo Integration
 
-Add these two tools to your Renggo orchestrator agent config (see `flows/tool_spec.json` for full schema):
+Rather than relying on unpredictable LLM tool-calling, this integration is built deterministically using Renggo's native **Function Flow Nodes**. This guarantees the Bridge API is triggered at the exact right moment in the conversation script.
 
-```python
-# In your orchestrator tool definitions, set BRIDGE_URL to where the bridge is running
-BRIDGE_URL = "http://localhost:8080"  # or your hosted URL
+To integrate your Renggo agent with the bridge, add the following Function nodes to your flow:
 
-tools = [
-    {
-        "name": "escalate_to_band",
-        "http": {"url": f"{BRIDGE_URL}/escalations", "method": "POST"}
-    },
-    {
-        "name": "check_resolution",
-        "http": {"url": f"{BRIDGE_URL}/escalations/{{escalation_id}}/resolution", "method": "GET"}
-    }
-]
-```
+### 1. Escalate to Band (`POST`)
+This node creates the ticket and starts the asynchronous Band room triage.
+* **Node Type**: Function
+* **URL**: `http://localhost:8080/escalations` (or your hosted URL)
+* **Method**: `POST`
+* **Body**: JSON payload containing `call_id`, `caller_id`, `issue_description`, and any `context` variables extracted earlier in the flow.
+* **Response Mapping**: Extract `$.escalation_id` to a flow variable (e.g. `{{escalation_id}}`) and `$.status` to `{{escalation_status}}`.
 
-The voice agent polls `check_resolution` every 3–5 seconds (up to `IN_CALL_TIMEOUT_S`). On `status=resolved`, it speaks `resolution.resolution_text`. On `status=callback_scheduled`, it says "I'll call you back shortly" and ends the call gracefully.
+### 2. Check Resolution (`GET`)
+After placing a "Wait & Reassure" conversation node, use a second Function node to poll the ticket's status.
+* **Node Type**: Function
+* **URL**: `http://localhost:8080/escalations/{{escalation_id}}/resolution`
+* **Method**: `GET`
+* **Response Mapping**: 
+  * Extract `$.status` -> `{{escalation_status}}`
+  * Extract `$.resolution.resolution_text` -> `{{resolution_text}}`
+
+After the GET node, use a **Logic Split** node to check if `{{escalation_status}} == "resolved"`. If it is, speak the `{{resolution_text}}` to the caller. If it's `callback_scheduled` (or if it times out), gracefully end the call by telling the user they'll receive a callback shortly.
 
 ---
 
@@ -188,7 +191,9 @@ The voice agent polls `check_resolution` every 3–5 seconds (up to `IN_CALL_TIM
 
 This repo contains **only the new bridge + agents code** (MIT licensed).
 
-The Renggo voice platform (`call-center-ai`, `platform-api`, `orchestrator`) is closed-source hosted infrastructure and is not included here. The bridge connects to it as an HTTP client — no platform files are copied into this repo.
+The core Renggo voice platform is a recently launched startup (of which I am a co-founder) focused on delivering real-time, highly intelligent, full-duplex voice AI experiences. It is closed-source hosted infrastructure and is not included in this repository. The Band bridge simply connects to the live Renggo platform as an HTTP client — no proprietary platform files are exposed here.
+
+*Learn more about my startup and try our newly launched voice AI at [renggo.com](https://renggo.com).*
 
 ---
 
