@@ -49,8 +49,24 @@ As shown in the diagram above, our architecture supports a callback path. If an 
 
 ## 🎬 Demo Scenarios
 
-### Fast path — telecom billing dispute (~15s in-call)
+> 📞 **Test it live!** You can test this flow by calling our live demo at **+1 (808) 720-2508**.
 
+### How the Current Flow Works (Based on `band-billing-escalation-flow.json`)
+
+The voice agent in Renggo follows a structured conversational flow that integrates dynamically with our Band of Agents backend:
+
+1. **Information Gathering:** The voice agent greets the caller and confirms it's a billing issue. It then extracts three key variables: the **Caller ID**, a brief **Issue Description**, and the disputed **Charge Amount**.
+2. **Confirmation:** The agent summarizes the details to the caller to ensure accuracy before proceeding.
+3. **Escalation to Band:** The agent hits the Bridge API (`POST /escalations`) to create a ticket in the War Room. Behind the scenes, the autonomous Band agents (Triage, Knowledge, Compliance) immediately begin communicating with each other to formulate a resolution.
+4. **Polling & Reassurance:** While the Band agents work, the voice agent reassures the caller ("Just a few more seconds") and polls the Bridge API (`GET /resolution`). It will try this up to two times.
+5. **Resolution Delivery (Fast Path):** If the Band room resolves the issue in time (e.g., standard duplicate charge), the voice agent speaks the final resolution text and closes the ticket.
+6. **Fallback to Callback (Slow Path):** If the issue requires human approval (like a severe hardship refund) or takes too long, the voice agent gracefully ends the call ("I'll call you back shortly"). *Note: Since the outbound call feature in Renggo is pending implementation, this flow currently ends here, though the architecture supports asynchronous callbacks.*
+
+> 💡 **Important:** This billing dispute flow is purely a **hypothetical demo scenario**. The Bridge and Band of Agents architecture are **not hard-coded** to billing! The system can handle any scenario (technical support, sales, HR, etc.) as long as the Knowledge Base is populated with the relevant guidelines. The agents communicate dynamically to evaluate the case and return the answer back to Renggo.
+
+---
+
+### Fast path — telecom billing dispute (~15s in-call)
 
 ![Renggo App - Billing Escalation Flow](assets/renggo_app_flow.png)
 
