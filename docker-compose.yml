@@ -12,7 +12,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    command: python -m uvicorn bridge.main:app --host 0.0.0.0 --port 8080
+    command: python -m uvicorn bridge.main:app --host 0.0.0.0 --port 8080 --root-path /band-of-agents-hackathon
     ports:
       - "8080:8080"
     healthcheck:
